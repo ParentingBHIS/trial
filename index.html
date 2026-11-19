@@ -179,7 +179,6 @@
       }
 
       try {
-        // Memicu prompt izin kamera di top-level origin agar label & deviceId terbaca penuh
         const stream = await navigator.mediaDevices.getUserMedia({ video: true });
         stream.getTracks().forEach((track) => track.stop());
 
@@ -276,7 +275,14 @@
       });
 
       try {
-        const response = await fetch(`${GAS_API_URL}?action=checkin&phone=${encodeURIComponent(decodedText)}`);
+        const endpoint = new URL(GAS_API_URL);
+        endpoint.searchParams.set("action", "checkin");
+        endpoint.searchParams.set("phone", decodedText);
+
+        const response = await fetch(endpoint.toString());
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
         const result = await response.json();
 
         const toast = Swal.mixin({
@@ -294,13 +300,13 @@
         } else if (result.status === "GAGAL") {
           toast.fire({ icon: "error", title: `Gagal: ${result.message}` });
         } else {
-          toast.fire({ icon: "error", title: `Error: ${result.message}` });
+          toast.fire({ icon: "error", title: `Error: ${result.message || "Respons tidak dikenal"}` });
         }
       } catch (error) {
         Swal.fire({
           icon: "error",
           title: "Koneksi Gagal",
-          text: "Tidak dapat terhubung ke server."
+          text: "Tidak dapat terhubung ke server Apps Script."
         });
       } finally {
         setTimeout(() => {
