@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scanner Seminar</title>
+  <link href="https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/icon?family=Material+Icons" rel="stylesheet">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <style>
+    body {
+      background-color: #121212;
+      color: white;
+      font-family: 'Open Sans', sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      padding: 1rem;
+    }
+    .scanner-card {
+      width: 100%;
+      max-width: 600px;
+      padding: 2rem;
+      background-color: rgba(30, 30, 40, 0.9);
+      border-radius: 15px;
+      box-shadow: 0 0 20px rgba(167, 243, 0, 0.2);
+      margin-bottom: 1.5rem;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 1.5rem;
+      text-transform: uppercase;
+      border-bottom: 3px solid #A7F300;
+      padding-bottom: 10px;
+    }
+    #qr-reader {
+      width: 100%;
+      min-height: 260px;
+      background: white;
+      color: #121212;
+      border-radius: 10px;
+      overflow: hidden;
+      margin-bottom: 1rem;
+    }
+    .form-select-camera {
+      background-color: #252532;
+      color: white;
+      border: 1px solid #495057;
+      border-radius: 12px;
+      padding: 8px 12px;
+      margin-bottom: 0.75rem;
+    }
+    .form-select-camera:focus {
+      background-color: #252532;
+      color: white;
+      border-color: #A7F300;
+      box-shadow: 0 0 0 0.2rem rgba(167, 243, 0, 0.25);
+    }
+    .btn-custom {
+      background-color: #A7F300;
+      color: #1a1a1a;
+      font-weight: 600;
+      border: none;
+      border-radius: 25px;
+      padding: 10px 20px;
+      transition: 0.3s;
+    }
+    .btn-custom:hover {
+      background-color: #8AD400;
+    }
+    .btn-secondary-custom {
+      background-color: #495057;
+      color: white;
+      font-weight: 600;
+      border: none;
+      border-radius: 25px;
+      padding: 10px 20px;
+    }
+    #admin-frame-container {
+      width: 100%;
+      max-width: 900px;
+      height: 75vh;
+      display: none;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 0 20px rgba(0, 0, 0, 0.5);
+    }
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      background-color: white;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="scanner-card">
+    <h2>Scanner Kehadiran</h2>
+    <div id="qr-reader"></div>
+
+    <select id="camera-select" class="form-select form-select-camera" aria-label="Pilih kamera">
+      <option value="">Memuat daftar kamera...</option>
+    </select>
+
+    <div class="text-center mt-2 d-flex gap-2 justify-content-center flex-wrap">
+      <button id="btn-switch-camera" type="button" class="btn btn-custom">
+        <span class="material-icons align-middle" style="font-size: 1.2rem;">switch_camera</span> Ganti Kamera
+      </button>
+      <button id="btn-toggle-admin" type="button" class="btn btn-secondary-custom">
+        Buka Panel Admin
+      </button>
+    </div>
+  </div>
+
+  <div id="admin-frame-container">
+    <iframe
+      id="admin-iframe"
+      src="https://parentingbhis.github.io/seminar/"
+      allow="camera; microphone">
+    </iframe>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.js"></script>
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script>
+    // ========================================================
+    // URL WEB APP GOOGLE APPS SCRIPT (SERVER DATA)
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzXBu0H9mhKvpIQV65WB1IbstzYz8j0d0p8xy7xJ0W4iCwvMNgH9myxsYFZt8qcRZc0/exec";
+
+    // URL HALAMAN / PANEL ADMIN (IFRAME)
+    const ADMIN_PANEL_URL = "https://parentingbhis.github.io/seminar/";
+    // ========================================================
+
+    let html5QrCode;
+    let cameras = [];
+    let currentCameraIndex = 0;
+    let isProcessing = false;
+
+    document.addEventListener('DOMContentLoaded', async () => {
+      html5QrCode = new Html5Qrcode("qr-reader");
+
+      const cameraSelect = document.getElementById('camera-select');
+      cameraSelect.addEventListener('change', async (event) => {
+        const selectedIndex = parseInt(event.target.value, 10);
+        if (!Number.isNaN(selectedIndex) && cameras[selectedIndex]) {
+          currentCameraIndex = selectedIndex;
+          await restartScannerWithCamera(cameras[currentCameraIndex].id);
+        }
+      });
+
+      document.getElementById('btn-switch-camera').addEventListener('click', switchCamera);
+
+      const btnToggle = document.getElementById('btn-toggle-admin');
+      const frameContainer = document.getElementById('admin-frame-container');
+      const adminIframe = document.getElementById('admin-iframe');
+
+      adminIframe.src = ADMIN_PANEL_URL;
+
+      btnToggle.addEventListener('click', () => {
+        const isHidden = frameContainer.style.display === 'none' || frameContainer.style.display === '';
+        if (isHidden) {
+          frameContainer.style.display = 'block';
+          btnToggle.textContent = 'Tutup Panel Admin';
+          frameContainer.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          frameContainer.style.display = 'none';
+          btnToggle.textContent = 'Buka Panel Admin';
+        }
+      });
+
+      await loadCamerasAndStart();
+    });
+
+    function populateCameraDropdown() {
+      const selectEl = document.getElementById('camera-select');
+      selectEl.innerHTML = '';
+
+      cameras.forEach((cam, index) => {
+        const option = document.createElement('option');
+        option.value = index;
+        option.textContent = cam.label || `Kamera ${index + 1}`;
+        if (index === currentCameraIndex) {
+          option.selected = true;
+        }
+        selectEl.appendChild(option);
+      });
+    }
+
+    async function loadCamerasAndStart() {
+      const selectEl = document.getElementById('camera-select');
+
+      if (!window.isSecureContext) {
+        selectEl.innerHTML = '<option value="">Butuh HTTPS / localhost</option>';
+        Swal.fire({
+          icon: 'warning',
+          title: 'Koneksi Tidak Aman',
+          text: 'Akses kamera membutuhkan HTTPS atau localhost.'
+        });
+        return;
+      }
+
+      try {
+        cameras = await Html5Qrcode.getCameras();
+
+        if (!cameras || cameras.length === 0) {
+          selectEl.innerHTML = '<option value="">Tidak ada kamera terdeteksi</option>';
+          Swal.fire({
+            icon: 'error',
+            title: 'Kamera Tidak Ditemukan',
+            text: 'Tidak ada perangkat kamera yang tersedia di perangkat ini.'
+          });
+          return;
+        }
+
+        const backIndex = cameras.findIndex(cam =>
+          /back|rear|environment/i.test(cam.label)
+        );
+        currentCameraIndex = backIndex >= 0 ? backIndex : 0;
+
+        populateCameraDropdown();
+        await startScannerByDeviceId(cameras[currentCameraIndex].id);
+      } catch (err) {
+        selectEl.innerHTML = '<option value="">Izin kamera ditolak / gagal</option>';
+        Swal.fire({
+          icon: 'error',
+          title: 'Akses Kamera Gagal',
+          text: 'Pastikan izin kamera diaktifkan di browser dan tidak dipakai aplikasi lain.'
+        });
+      }
+    }
+
+    async function startScannerByDeviceId(deviceId) {
+      const config = {
+        fps: 10,
+        qrbox: (viewfinderWidth, viewfinderHeight) => {
+          const minEdge = Math.min(viewfinderWidth, viewfinderHeight);
+          const boxSize = Math.max(150, Math.floor(minEdge * 0.7));
+          return { width: boxSize, height: boxSize };
+        }
+      };
+
+      try {
+        await html5QrCode.start(deviceId, config, onScanSuccess);
+      } catch (err) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Kamera Error',
+          text: 'Gagal menjalankan kamera terpilih.'
+        });
+      }
+    }
+
+    async function restartScannerWithCamera(deviceId) {
+      if (!html5QrCode) return;
+
+      if (html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+
+      await startScannerByDeviceId(deviceId);
+    }
+
+    async function startScanner() {
+      if (!cameras.length) {
+        await loadCamerasAndStart();
+        return;
+      }
+
+      const activeCamera = cameras[currentCameraIndex] || cameras[0];
+      await startScannerByDeviceId(activeCamera.id);
+    }
+
+    async function switchCamera() {
+      if (!cameras.length) {
+        await loadCamerasAndStart();
+        return;
+      }
+
+      if (cameras.length === 1) {
+        Swal.fire({
+          icon: 'info',
+          title: 'Hanya 1 Kamera',
+          text: 'Perangkat ini hanya memiliki satu kamera yang terdeteksi.'
+        });
+        return;
+      }
+
+      currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+      document.getElementById('camera-select').value = currentCameraIndex;
+      await restartScannerWithCamera(cameras[currentCameraIndex].id);
+    }
+
+    async function sendCheckinToServer(decodedText) {
+      const endpoint = new URL(GAS_API_URL);
+      endpoint.searchParams.set("action", "checkin");
+      endpoint.searchParams.set("phone", decodedText);
+
+      const response = await fetch(endpoint.toString(), {
+        method: "GET"
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const rawText = await response.text();
+      try {
+        return JSON.parse(rawText);
+      } catch (_) {
+        throw new Error("Respons server bukan format JSON valid.");
+      }
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (isProcessing) return;
+      isProcessing = true;
+
+      if (html5QrCode && html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+
+      Swal.fire({
+        title: 'Memproses...',
+        text: 'Mencatat kehadiran...',
+        allowOutsideClick: false,
+        didOpen: () => { Swal.showLoading(); }
+      });
+
+      const toast = Swal.mixin({
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3500,
+        timerProgressBar: true
+      });
+
+      try {
+        const result = await sendCheckinToServer(decodedText);
+        Swal.close();
+
+        if (result.status === "SUCCESS") {
+          toast.fire({ icon: 'success', title: `Check-in: ${result.name}` });
+        } else if (result.status === "INFO") {
+          toast.fire({ icon: 'info', title: `${result.name} sudah check-in!` });
+        } else if (result.status === "GAGAL") {
+          toast.fire({ icon: 'error', title: `Gagal: ${result.message}` });
+        } else {
+          toast.fire({ icon: 'error', title: `Error: ${result.message || 'Respons tidak dikenal'}` });
+        }
+      } catch (error) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Koneksi ke Server Gagal',
+          text: error.message || 'Pastikan deployment Web App Google Apps Script sudah diatur ke Anyone.'
+        });
+      } finally {
+        setTimeout(() => {
+          isProcessing = false;
+          startScanner();
+        }, 2000);
+      }
+    }
+  </script>
+</body>
+</html>
