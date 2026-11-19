@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Parenting Buahati - Scanner</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+    html, body {
+      margin: 0;
+      padding: 0;
+      min-height: 100%;
+      background: lightyellow;
+      font-family: Arial, sans-serif;
+      color: #1f2937;
+    }
+    .page-wrapper {
+      max-width: 960px;
+      margin: 0 auto;
+      padding: 16px;
+    }
+    .scanner-box {
+      background: #ffffff;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+      margin-bottom: 16px;
+    }
+    .scanner-box h2 {
+      margin: 0 0 12px;
+      font-size: 1.1rem;
+    }
+    #qr-reader {
+      width: 100%;
+      min-height: 260px;
+      border-radius: 8px;
+      overflow: hidden;
+      background: #111827;
+    }
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    select, button {
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid #d1d5db;
+      font-size: 0.95rem;
+    }
+    button {
+      background: #111827;
+      color: #ffffff;
+      cursor: pointer;
+    }
+    .status-text {
+      margin-top: 10px;
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .frame-box {
+      width: 100%;
+      height: 75vh;
+      border-radius: 12px;
+      overflow: hidden;
+      background: lightyellow;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    }
+    iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: none;
+      background: lightyellow;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-wrapper">
+    <div class="scanner-box">
+      <h2>Scanner Kamera (Pihak Ketiga: html5-qrcode)</h2>
+      <div id="qr-reader"></div>
+
+      <div class="controls">
+        <select id="camera-select" aria-label="Pilih Kamera">
+          <option value="">Memuat kamera...</option>
+        </select>
+        <button id="btn-start" type="button">Mulai Kamera</button>
+        <button id="btn-stop" type="button">Hentikan Kamera</button>
+      </div>
+
+      <div id="status-text" class="status-text">Status: Siap memuat kamera</div>
+    </div>
+
+    <div class="frame-box">
+      <iframe
+        id="app-iframe"
+        src="https://script.google.com/macros/s/AKfycbzXBu0H9mhKvpIQV65WB1IbstzYz8j0d0p8xy7xJ0W4iCwvMNgH9myxsYFZt8qcRZc0/exec"
+        allow="camera *; microphone *; display-capture *"
+        sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox"
+        referrerpolicy="no-referrer-when-downgrade">
+      </iframe>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+  <script>
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbzXBu0H9mhKvpIQV65WB1IbstzYz8j0d0p8xy7xJ0W4iCwvMNgH9myxsYFZt8qcRZc0/exec";
+
+    const html5QrCode = new Html5Qrcode("qr-reader");
+    const cameraSelect = document.getElementById("camera-select");
+    const statusText = document.getElementById("status-text");
+    let isBusy = false;
+
+    function setStatus(msg) {
+      statusText.textContent = "Status: " + msg;
+    }
+
+    async function loadCameras() {
+      if (!window.isSecureContext) {
+        setStatus("Akses kamera membutuhkan HTTPS atau localhost.");
+        return;
+      }
+
+      try {
+        const devices = await Html5Qrcode.getCameras();
+        cameraSelect.innerHTML = "";
+
+        if (!devices || devices.length === 0) {
+          cameraSelect.innerHTML = '<option value="">Tidak ada kamera ditemukan</option>';
+          setStatus("Tidak ada kamera yang terdeteksi.");
+          return;
+        }
+
+        devices.forEach((device, idx) => {
+          const opt = document.createElement("option");
+          opt.value = device.id;
+          opt.textContent = device.label || `Kamera ${idx + 1}`;
+          cameraSelect.appendChild(opt);
+        });
+
+        await startSelectedCamera();
+      } catch (err) {
+        cameraSelect.innerHTML = '<option value="">Izin kamera ditolak / gagal</option>';
+        setStatus("Gagal memuat daftar kamera: " + (err && err.message ? err.message : err));
+      }
+    }
+
+    async function startSelectedCamera() {
+      const deviceId = cameraSelect.value;
+      if (!deviceId) return;
+
+      try {
+        if (html5QrCode.isScanning) {
+          await html5QrCode.stop();
+        }
+        await html5QrCode.start(
+          deviceId,
+          { fps: 10, qrbox: { width: 240, height: 240 } },
+          onScanSuccess
+        );
+        setStatus("Kamera aktif");
+      } catch (err) {
+        setStatus("Gagal membuka kamera: " + (err && err.message ? err.message : err));
+      }
+    }
+
+    async function stopCamera() {
+      try {
+        if (html5QrCode.isScanning) {
+          await html5QrCode.stop();
+          setStatus("Kamera dihentikan");
+        }
+      } catch (err) {
+        setStatus("Gagal menghentikan kamera");
+      }
+    }
+
+    async function onScanSuccess(decodedText) {
+      if (isBusy) return;
+      isBusy = true;
+      setStatus("Memproses hasil scan: " + decodedText);
+
+      try {
+        const url = new URL(GAS_API_URL);
+        url.searchParams.set("action", "checkin");
+        url.searchParams.set("phone", decodedText);
+
+        const res = await fetch(url.toString());
+        const data = await res.json();
+        setStatus(`Respons server (${data.status || "OK"}): ${data.name || data.message || "Berhasil"}`);
+      } catch (err) {
+        setStatus("Gagal mengirim data ke server: " + (err && err.message ? err.message : err));
+      } finally {
+        setTimeout(() => {
+          isBusy = false;
+        }, 1500);
+      }
+    }
+
+    document.getElementById("btn-start").addEventListener("click", startSelectedCamera);
+    document.getElementById("btn-stop").addEventListener("click", stopCamera);
+    cameraSelect.addEventListener("change", startSelectedCamera);
+
+    window.addEventListener("DOMContentLoaded", loadCameras);
+  </script>
+</body>
+</html>
