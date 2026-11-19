@@ -22,14 +22,6 @@
       color: #ffffff;
     }
 
-    .app-frame {
-      display: block;
-      width: 100%;
-      height: 100vh;
-      border: none;
-      background: lightyellow;
-    }
-
     .scanner-section {
       display: flex;
       justify-content: center;
@@ -41,7 +33,7 @@
       width: 100%;
       max-width: 600px;
       padding: 2rem;
-      background-color: rgba(30, 30, 40, 0.9);
+      background-color: rgba(30, 30, 40, 0.92);
       border-radius: 15px;
       box-shadow: 0 0 20px rgba(167, 243, 0, 0.2);
     }
@@ -56,10 +48,28 @@
 
     #qr-reader {
       width: 100%;
+      min-height: 260px;
       background: #ffffff;
+      color: #121212;
       border-radius: 10px;
       overflow: hidden;
       margin-bottom: 1rem;
+    }
+
+    .form-select-camera {
+      background-color: #252532;
+      color: #ffffff;
+      border: 1px solid #495057;
+      border-radius: 12px;
+      padding: 8px 12px;
+      margin-bottom: 0.75rem;
+    }
+
+    .form-select-camera:focus {
+      background-color: #252532;
+      color: #ffffff;
+      border-color: #A7F300;
+      box-shadow: 0 0 0 0.2rem rgba(167, 243, 0, 0.25);
     }
 
     .btn-custom {
@@ -87,18 +97,16 @@
   </style>
 </head>
 <body>
-  <iframe
-    class="app-frame"
-    src="https://script.google.com/macros/s/AKfycbzXBu0H9mhKvpIQV65WB1IbstzYz8j0d0p8xy7xJ0W4iCwvMNgH9myxsYFZt8qcRZc0/exec"
-    allow="camera">
-  </iframe>
-
   <div class="scanner-section">
     <div class="scanner-card">
       <h2>Scanner Kehadiran</h2>
       <div id="qr-reader"></div>
 
-      <div class="text-center mt-3 d-flex gap-2 justify-content-center flex-wrap">
+      <select id="camera-select" class="form-select form-select-camera" aria-label="Pilih kamera">
+        <option value="">Memuat daftar kamera...</option>
+      </select>
+
+      <div class="text-center mt-2 d-flex gap-2 justify-content-center flex-wrap">
         <button id="btn-switch-camera" type="button" class="btn btn-custom">
           <span class="material-icons align-middle" style="font-size: 1.2rem;">switch_camera</span>
           Ganti Kamera
@@ -119,48 +127,143 @@
     // ========================================================
 
     let html5QrCode;
-    let currentFacingMode = "environment";
-    let isProcessing = false; // Mencegah scan ganda
+    let cameras = [];
+    let currentCameraIndex = 0;
+    let isProcessing = false;
 
-    document.addEventListener("DOMContentLoaded", () => {
-      startScanner();
+    document.addEventListener("DOMContentLoaded", async () => {
+      html5QrCode = new Html5Qrcode("qr-reader");
+
+      document.getElementById("camera-select").addEventListener("change", async (event) => {
+        const idx = parseInt(event.target.value, 10);
+        if (!Number.isNaN(idx) && cameras[idx]) {
+          currentCameraIndex = idx;
+          await restartScannerWithCamera(cameras[currentCameraIndex].id);
+        }
+      });
 
       document.getElementById("btn-switch-camera").addEventListener("click", switchCamera);
       document.getElementById("btn-back").addEventListener("click", () => {
         window.location.href = ADMIN_URL;
       });
+
+      await initCamerasAndStart();
     });
 
-    function startScanner() {
-      html5QrCode = new Html5Qrcode("qr-reader");
+    function populateCameraDropdown() {
+      const selectEl = document.getElementById("camera-select");
+      selectEl.innerHTML = "";
 
-      html5QrCode.start(
-        { facingMode: currentFacingMode },
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        onScanSuccess
-      ).catch(() => {
-        Swal.fire({
-          icon: "error",
-          title: "Kamera Error",
-          text: "Pastikan Anda memberikan izin akses kamera."
-        });
+      cameras.forEach((cam, idx) => {
+        const option = document.createElement("option");
+        option.value = idx;
+        option.textContent = cam.label || `Kamera ${idx + 1}`;
+        if (idx === currentCameraIndex) {
+          option.selected = true;
+        }
+        selectEl.appendChild(option);
       });
     }
 
-    function switchCamera() {
-      if (html5QrCode && html5QrCode.isScanning) {
-        html5QrCode.stop().then(() => {
-          currentFacingMode = (currentFacingMode === "environment") ? "user" : "environment";
-          startScanner();
+    async function initCamerasAndStart() {
+      const selectEl = document.getElementById("camera-select");
+
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        selectEl.innerHTML = '<option value="">Browser tidak mendukung kamera</option>';
+        Swal.fire({
+          icon: "error",
+          title: "Kamera Tidak Didukung",
+          text: "Browser atau koneksi ini tidak mendukung akses kamera."
+        });
+        return;
+      }
+
+      try {
+        // Memicu prompt izin kamera di top-level origin agar label & deviceId terbaca penuh
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        stream.getTracks().forEach((track) => track.stop());
+
+        cameras = await Html5Qrcode.getCameras();
+        if (!cameras || cameras.length === 0) {
+          selectEl.innerHTML = '<option value="">Tidak ada kamera terdeteksi</option>';
+          Swal.fire({
+            icon: "error",
+            title: "Kamera Tidak Ditemukan",
+            text: "Tidak ada perangkat kamera yang tersedia pada perangkat ini."
+          });
+          return;
+        }
+
+        const backIndex = cameras.findIndex((cam) => /back|rear|environment/i.test(cam.label));
+        currentCameraIndex = backIndex >= 0 ? backIndex : 0;
+
+        populateCameraDropdown();
+        await startScannerByDeviceId(cameras[currentCameraIndex].id);
+      } catch (err) {
+        selectEl.innerHTML = '<option value="">Izin kamera ditolak / gagal</option>';
+        Swal.fire({
+          icon: "error",
+          title: "Izin Kamera Ditolak",
+          text: "Klik ikon izin/pengaturan di bilah alamat browser, ubah Camera ke Allow, lalu muat ulang halaman."
         });
       }
+    }
+
+    async function startScannerByDeviceId(deviceId) {
+      try {
+        await html5QrCode.start(
+          deviceId,
+          { fps: 10, qrbox: { width: 250, height: 250 } },
+          onScanSuccess
+        );
+      } catch (err) {
+        Swal.fire({
+          icon: "error",
+          title: "Kamera Error",
+          text: "Tidak dapat memulai kamera. Pastikan kamera tidak sedang dipakai aplikasi lain."
+        });
+      }
+    }
+
+    async function restartScannerWithCamera(deviceId) {
+      if (!html5QrCode) return;
+      if (html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+      await startScannerByDeviceId(deviceId);
+    }
+
+    async function startScanner() {
+      if (!cameras.length) {
+        await initCamerasAndStart();
+        return;
+      }
+      const activeCam = cameras[currentCameraIndex] || cameras[0];
+      await startScannerByDeviceId(activeCam.id);
+    }
+
+    async function switchCamera() {
+      if (!cameras.length) {
+        await initCamerasAndStart();
+        return;
+      }
+      if (cameras.length === 1) {
+        Swal.fire({
+          icon: "info",
+          title: "Hanya 1 Kamera",
+          text: "Perangkat ini hanya memiliki satu kamera."
+        });
+        return;
+      }
+      currentCameraIndex = (currentCameraIndex + 1) % cameras.length;
+      document.getElementById("camera-select").value = currentCameraIndex;
+      await restartScannerWithCamera(cameras[currentCameraIndex].id);
     }
 
     async function onScanSuccess(decodedText) {
       if (isProcessing) return;
       isProcessing = true;
 
-      // Hentikan scanner sementara agar tidak scan berulang kali
       if (html5QrCode && html5QrCode.isScanning) {
         await html5QrCode.stop();
       }
@@ -169,13 +272,10 @@
         title: "Memproses...",
         text: "Mencatat kehadiran...",
         allowOutsideClick: false,
-        didOpen: () => {
-          Swal.showLoading();
-        }
+        didOpen: () => { Swal.showLoading(); }
       });
 
       try {
-        // Memanggil API Google Apps Script menggunakan Fetch
         const response = await fetch(`${GAS_API_URL}?action=checkin&phone=${encodeURIComponent(decodedText)}`);
         const result = await response.json();
 
@@ -203,7 +303,6 @@
           text: "Tidak dapat terhubung ke server."
         });
       } finally {
-        // Nyalakan kembali scanner setelah jeda
         setTimeout(() => {
           isProcessing = false;
           startScanner();
