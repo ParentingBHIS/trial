@@ -1,0 +1,20 @@
+<iframe
+  id="appsScriptFrame"
+  src="GANTI_DENGAN_URL_WEB_APP_APPS_SCRIPT"
+  title="Aplikasi Registrasi dan Presensi Seminar"
+  allow="camera; microphone; clipboard-read; clipboard-write"
+  allowfullscreen
+  style="width: 100%; height: 100vh; border: 0;"
+></iframe>
+
+<script>
+  const baseUrl = "https://script.google.com/macros/s/AKfycbzSWzKkl_WQEAuEhbYUSyYx251CjDag1ZXTGI5hXuWUoMzve4kge-2Y5BgIMFBgaOHF/exec";
+  const currentParams = new URLSearchParams(window.location.search);
+  const targetUrl = new URL(baseUrl);
+
+  currentParams.forEach((value, key) => {
+    targetUrl.searchParams.set(key, value);
+  });
+
+  document.getElementById("appsScriptFrame").src = targetUrl.toString();
+</script>
